@@ -12,7 +12,7 @@ article_dirname = '章节'
 if not os.path.exists(html_dirname):
     os.mkdir(html_dirname)
 if not os.path.exists(article_dirname):
-    os.mkdir(html_dirname)
+    os.mkdir(article_dirname)
 
 
 def html_download():
