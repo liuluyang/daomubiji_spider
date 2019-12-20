@@ -1,0 +1,147 @@
+
+
+import requests
+from lxml import etree
+import os
+import time
+
+"""
+1、小说名字+编号创建目录结构：
+    <name-code>:
+        章节
+        <name>.html
+        章节目录.txt
+        
+2、下载章节内容
+
+"""
+
+
+class QiDianSpider:
+
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+    def __init__(self, code):
+        self.code = code
+        self.book_url = 'https://book.qidian.com/info/%s'%(self.code)
+        self.book_name = None
+        self.book_dir = None
+        self.chapter_path = None
+        self.chapter_info_name = '章节目录.txt'
+
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/'
+                          '537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36'
+        }
+
+        self.downloaded_set = set()
+
+    def title_get(self):
+        """
+        初始化一些信息
+        获取章节信息
+        :return:
+        """
+
+        r = requests.get(self.book_url, self.headers)
+        if r.status_code != 200:
+            print(r.status_code)
+            return False
+
+        html = r.content.decode()
+        html_obj = etree.HTML(html)
+        self.book_name = html_obj.xpath('//meta[@name="keywords"]/@content')[0]
+        if not self.book_name:
+            print('书名获取失败！')
+            return False
+        self.book_dir = self.book_name + '-' + self.code
+
+        if not os.path.exists(self.book_dir):
+            os.mkdir(self.book_dir)
+        self.chapter_path = os.path.join(self.book_dir, '章节')
+        if not os.path.exists(self.chapter_path):
+            os.mkdir(self.chapter_path)
+
+        html_path = os.path.join(self.book_dir, self.book_name) + '.html'
+        with open(html_path, 'w', encoding='utf8') as f:
+            f.write(html)
+
+        title_name = html_obj.xpath('//a[contains(@href, "read.qidian.com/chapter/")]')
+        with open(os.path.join(self.book_dir, self.chapter_info_name), 'w', encoding='utf8') as f:
+            for title in title_name:
+                url, name = title.xpath('@href'), title.xpath('text()')
+                if url and name:
+                    url, name = url[0], name[0]
+                    name = '-'.join(name.strip().split())
+                    f.write(name+'\t'+url+'\n')
+
+        return True
+
+    def content_get(self, url, name):
+        """
+        获取正文内容
+        :param url:
+        :param name:
+        :return:
+        """
+        if not name.endswith('.txt'):
+            name += '.txt'
+
+        r = requests.get(url, headers=self.headers)
+        if r.status_code != 200:
+            return False
+
+        html = r.content.decode()
+        html = etree.HTML(html)
+
+        p_list = html.xpath('//div[contains(@class, "read-content")]/*')
+
+        with open(os.path.join(self.chapter_path, name), 'w', encoding='utf8') as f:
+            for index, p in enumerate(p_list):
+                text = p.xpath('text()')
+                if text:
+                    content = text[0].strip()
+                    # print(index, content)
+                    f.write(content + '\n\n')
+
+        return True
+
+    def main(self):
+        """
+        主函数
+        :return:
+        """
+        if not self.title_get():
+            return
+
+        self.downloaded_set = set(os.listdir(self.chapter_path))
+        with open(os.path.join(self.book_dir, self.chapter_info_name), 'r', encoding='utf8') as f:
+            lines = f.readlines()
+            lines_num = len(lines)
+            for index, line in enumerate(lines):
+                name, url = line.strip().split()
+                url = 'https:' + url
+                name = str(index).zfill(3) + name + '.txt'
+                if name not in self.downloaded_set:
+                    print(name, '正在下载。。。')
+                    r = self.content_get(url, name)
+                    if r:
+                        self.downloaded_set.add(name)
+                        print('下载成功')
+                    else:
+                        print(name, '下载失败')
+                else:
+                    print(name, '已存在该章节')
+                percent = int(len(self.downloaded_set)/lines_num*100)
+                print('#'*percent, '%%%s'%(percent))
+                # time.sleep(1)
+
+
+if __name__ == '__main__':
+
+    q = QiDianSpider('68223')
+    # q.title_get()
+    q.main()
+
+
+
